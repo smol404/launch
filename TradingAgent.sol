@@ -10,8 +10,7 @@ contract TradingAgentLogicV4 {
     address public constant WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
 
     // ── FourMeme Bonding Curve Contracts on BSC Mainnet ──
-    //IFourMemeTokenManager public constant FOURMEME =IFourMemeTokenManager();
-    //IFourMemeHelper public constant FOURMEME_HELPER =IFourMemeHelper();
+    
 
     string public name = "TradingAgentLogicV4";
     string public version = "4.0.0-multibap";
@@ -73,9 +72,6 @@ contract TradingAgentLogicV4 {
     event Unpaused(address account);
     event SlippageUpdated(uint256 oldBps, uint256 newBps);
     event EmergencyWithdraw(address token, uint256 amount, address to);
-
-    event FourMemeBuy(address indexed bap, uint256 indexed tokenId, address token, uint256 bnbSpent, uint256 tokensReceived);
-    event FourMemeSell(address indexed bap, uint256 indexed tokenId, address token, uint256 tokensSold, uint256 bnbReceived);
 
     event AgentOwnerWithdraw(address indexed bap, uint256 indexed tokenId, address indexed agentOwner, address token, uint256 amount);
     event GasReimbursed(address indexed bap, uint256 indexed tokenId, address indexed caller, uint256 gasUsed, uint256 gasCost);
@@ -330,12 +326,6 @@ contract TradingAgentLogicV4 {
             (success, result) = _handleCheckBalance(bap, tokenId, payload);
         } else if (actionHash == keccak256(bytes("get_price"))) {
             (success, result) = _handleGetPrice(payload);
-        } else if (actionHash == keccak256(bytes("buy_fourmeme"))) {
-            (success, result) = _handleBuyFourMeme(bap, tokenId, payload);
-        } else if (actionHash == keccak256(bytes("sell_fourmeme"))) {
-            (success, result) = _handleSellFourMeme(bap, tokenId, payload);
-        } else if (actionHash == keccak256(bytes("check_fourmeme"))) {
-            (success, result) = _handleCheckFourMeme(payload);
         } else {
             emit ActionHandled(bap, tokenId, action, false, abi.encode("Unknown action"));
             (success, result) = (false, abi.encode("Unknown action"));
@@ -441,71 +431,7 @@ contract TradingAgentLogicV4 {
         return (true, abi.encode(amounts[1]));
     }
 
-    function _handleBuyFourMeme(address bap, uint256 tokenId, bytes calldata payload)
-        internal
-        returns (bool, bytes memory)
-    {
-        (address tokenAddress, uint256 amountBNB, uint256 minTokens) =
-            abi.decode(payload, (address, uint256, uint256));
-
-        require(tokenAddress != address(0), "Zero token address");
-        require(agentBNBBalance[bap][tokenId] >= amountBNB, "Insufficient BNB balance");
-
-        emit TradingActionRequested(bap, tokenId, msg.sender, "buy_fourmeme", tokenAddress, amountBNB, 0);
-        agentBNBBalance[bap][tokenId] -= amountBNB;
-
-        uint256 balBefore = IERC20(tokenAddress).balanceOf(address(this));
-        FOURMEME.buyTokenAMAP{value: amountBNB}(tokenAddress, amountBNB, minTokens);
-        uint256 received = IERC20(tokenAddress).balanceOf(address(this)) - balBefore;
-        require(received > 0, "FourMeme buy returned zero tokens");
-
-        agentTokenBalance[bap][tokenId][tokenAddress] += received;
-
-        emit FourMemeBuy(bap, tokenId, tokenAddress, amountBNB, received);
-        emit ActionHandled(bap, tokenId, "buy_fourmeme", true, abi.encode("FourMeme buy executed"));
-        return (true, abi.encode("FourMeme buy executed"));
-    }
-
-    function _handleSellFourMeme(address bap, uint256 tokenId, bytes calldata payload)
-        internal
-        returns (bool, bytes memory)
-    {
-        (address tokenAddress, uint256 amountTokens) =
-            abi.decode(payload, (address, uint256));
-
-        require(tokenAddress != address(0), "Zero token address");
-        require(agentTokenBalance[bap][tokenId][tokenAddress] >= amountTokens, "Insufficient token balance");
-
-        emit TradingActionRequested(bap, tokenId, msg.sender, "sell_fourmeme", tokenAddress, amountTokens, 0);
-        agentTokenBalance[bap][tokenId][tokenAddress] -= amountTokens;
-
-        _safeApprove(tokenAddress, address(FOURMEME), 0);
-        _safeApprove(tokenAddress, address(FOURMEME), amountTokens);
-
-        uint256 balBefore = address(this).balance;
-        FOURMEME.sellToken(tokenAddress, amountTokens);
-        uint256 bnbReceived = address(this).balance - balBefore;
-        require(bnbReceived > 0, "FourMeme sell returned zero BNB");
-
-        agentBNBBalance[bap][tokenId] += bnbReceived;
-
-        emit FourMemeSell(bap, tokenId, tokenAddress, amountTokens, bnbReceived);
-        emit ActionHandled(bap, tokenId, "sell_fourmeme", true, abi.encode("FourMeme sell executed"));
-        return (true, abi.encode("FourMeme sell executed"));
-    }
-
-    function _handleCheckFourMeme(bytes calldata payload)
-        internal
-        view
-        returns (bool, bytes memory)
-    {
-        address tokenAddress = abi.decode(payload, (address));
-        (bool ok, bytes memory rawResult) = address(FOURMEME_HELPER).staticcall(
-            abi.encodeWithSelector(IFourMemeHelper.getTokenInfo.selector, tokenAddress)
-        );
-        require(ok, "FourMeme query failed");
-        return (true, rawResult);
-    }
+    
 
     // ── Swaps ──
     function _swapBNBForToken(address tokenAddress, uint256 amountBNB, uint256 slippageBps) internal returns (uint256) {
